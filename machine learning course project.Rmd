@@ -1,0 +1,157 @@
+---
+title: "Practical machine learning Course project"
+author: "Akylai Mk"
+date: "9/11/2020"
+output: html_document
+---
+
+## Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+## Objectives
+
+The goal of this project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. This report includes the following:
+* description of how the model was built
+* cross validation
+* sample error 
+
+## Data
+
+he training data for this project are available here:
+
+* https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+* https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv 
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. 
+It has been published:
+
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. [Qualitative Activity Recognition of Weight Lifting Exercises](http://groupware.les.inf.puc-rio.br/har#ixzz34irPKNuZ). *Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13)*. Stuttgart, Germany: ACM SIGCHI, 2013.
+
+
+
+### Reading the data
+
+We first read the train and test data from the csv file included in the compressed file. 
+
+```{r, cache=TRUE, message=FALSE}
+library(caret); library(AppliedPredictiveModeling); library(rattle)
+library(randomForest); library(forecast); library(gbm)
+train <- read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"))
+validating <- read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"))
+```
+The training dataset has information on 160 variables and includes 19,622 rows.
+We will use testing dataset in the very end, as a validating set. 
+Training dataset can be divided into two, to get a testing set, after we drop all unnessary columns.
+
+
+### Pre-processing data
+First, I drop zero covariates. I do this only with training set!
+
+```{r, cache=TRUE, message=FALSE}
+nzv <- nearZeroVar(train, saveMetrics = TRUE)
+train <- train[,nzv$nzv==FALSE]
+```
+
+Next, I check for NAs and remove columns with large number of NAs
+```{r, cache=TRUE, message=FALSE}
+shareNA <- colMeans(is.na(train))
+table(shareNA)
+
+```
+We see that there are many columns with almost all values that are missing. 
+We can remove them from out datasets.
+
+```{r, cache=TRUE, message=FALSE}
+cleanTrain <- train[!shareNA]
+# check number of columns after cleaning
+ncol(cleanTrain)
+```
+
+We will not use all variables given in the dataset. They are not very useful for predicting the type of exercise, so we can drop them from our analysis. 
+* variable `X`, which contains the row numbers
+* variable `user_name`, which contains the name of the user.
+* variables for time stamps `raw_timestamp_part_1`, `raw_timestamp_part_2`, and `cvtd_timestamp`
+
+
+```{r, cache=TRUE, message-FALSE}
+extraVar <- grep("^X$|user_name|timestamp", names(cleanTrain))
+cleanTrain2 <- cleanTrain[-extraVar]
+```
+
+Now we can divide our clean training dataset into two, to get training and testing sets.
+
+
+```{r,  cache=TRUE,message=FALSE}
+set.seed(1111)
+inTrain = createDataPartition(cleanTrain2$classe, p = 3/4)[[1]]
+training = cleanTrain2[inTrain,]
+testing = cleanTrain2[-inTrain,]
+```
+
+
+### Prediction with Tree
+```{r, cache = TRUE, message=FALSE}
+set.seed(1111); 
+modelFit1 <- train(classe ~., data=training, method="rpart")
+fancyRpartPlot(modelFit1$finalModel)
+prediction1 <- predict(modelFit1, testing)
+```
+We see that roll_belt, pitch_forearm, num_window, magnet_dumbbell_y, and roll_forearm are the variables that predict most variation in classe.
+
+## Prediction with boosted predictor using the "gbm" method
+```{r, message=FALSE}
+set.seed(1000); library(caret)
+modelFit2 <- train(classe~., method="gbm", data=training, verbose=FALSE)
+prediction2 <- predict(modelFit2, testing)
+```
+
+## fitting a linear discriminant analysis model
+```{r, cache=TRUE, message=FALSE}
+set.seed(1111); library(caret)
+modelFit3 <- train(classe~., method="lda", data=training)
+prediction3 <- predict(modelFit3, testing)
+```
+
+## stack predictions together using random forests and see the accuracy
+
+``` {r, cache = TRUE, message=FALSE}
+set.seed(1111); library(caret)
+predSt <- data.frame(pred1=prediction1, pred2=prediction2, pred3=prediction3,
+                     classe=testing$classe)
+combMod <- train(classe~., method="rf", data=predSt)
+combPred <- predict(combMod, predSt)
+confusionMatrix(table(prediction1, testing$classe))$overall[1]
+confusionMatrix(table(prediction2, testing$classe))$overall[1]
+confusionMatrix(table(prediction3, testing$classe))$overall[1]
+confusionMatrix(table(combPred, testing$classe))$overall[1]
+```
+The best prediction is given by model 2, boosting using 'gbm' method. 
+
+## we can also compare the results of the best performing model with real cases
+
+```{r, cache = TRUE, message=FALSE}
+table(prediction2, testing$classe)
+```
+
+We see that the accuracy of our predictions is quite high, more than 98%.
+
+I couldn't test errors because the prediction (and classe variable) are factor with five levels. 
+
+## Prediction on validation dataset (original testing data)
+
+We use the most accurate model out of four models we've tested to predict on validation dataset.
+
+```{r, cache = TRUE, message=FALSE}
+set.seed(1111)
+prediction <- predict(modelFit2, validating)
+prediction
+
+```
+The most important variables in the model are:
+
+```{r, cache = TRUE, message=FALSE}
+importantVar <- varImp(modelFit2)$importance
+importantVar[head(order(unlist(importantVar), decreasing = TRUE), 5L), , drop = FALSE]
+```
