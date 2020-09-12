@@ -1,7 +1,7 @@
 # practical-machine-learning
 course project
 
-The goal of this project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. The report given in project.rmd includes the following:
+The goal of this project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. The report given in project.rmd and in project.html includes the following:
 * description of how the model was built
 * cross validation
 * sample error 
